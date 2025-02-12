@@ -1,0 +1,47 @@
+name: CD Pipeline - Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main  # Trigger deployment when changes are pushed to main
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up SSH private key
+        run: |
+          echo "${{ secrets.AWS_SSH_PRIVATE_KEY }}" > my-key.pem
+          chmod 600 my-key.pem
+
+      - name: Deploy to AWS EC2
+        run: |
+          ssh -i my-key.pem -o StrictHostKeyChecking=no ubuntu@13.53.197.235 << 'EOF'
+            cd /home/ubuntu/fastapi-book-project || exit
+            git reset --hard origin/main || exit
+            git pull origin main || exit
+            source venv/bin/activate || exit
+            pip install -r requirements.txt || exit
+            sudo systemctl restart fastapi-app.service || exit
+            sudo systemctl status fastapi-app.service || exit
+          EOF
+
+      - name: Clean up SSH key
+        run: rm -f my-key.pem
