@@ -18,36 +18,57 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
-          host: 13.53.197.235  # Your EC2 IP
+          host: 13.53.197.235
           username: ubuntu
           key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
           script: |
-            # Stop any existing processes
+            echo "Starting cleanup..."
+            # Stop the service
             sudo systemctl stop fastapi-app.service || true
-            pid=$(sudo lsof -t -i:8000) || true
-            if [ ! -z "$pid" ]; then
-              sudo kill -9 $pid || true
+            
+            # More aggressive process cleanup
+            echo "Killing all processes on port 8000..."
+            sudo pkill -f uvicorn || true
+            sudo kill -9 $(sudo lsof -t -i:8000) 2>/dev/null || true
+            
+            # Wait to ensure port is freed
+            sleep 5
+            
+            echo "Verifying port 8000 is free..."
+            if sudo lsof -i:8000; then
+              echo "Port 8000 still in use. Forcing cleanup..."
+              sudo fuser -k 8000/tcp || true
+              sleep 2
             fi
             
-            # Deploy updated code
+            echo "Deploying updated code..."
             cd /home/ubuntu/fastapi-book-project
             git reset --hard origin/main
             git pull origin main
             
-            # Update dependencies
+            echo "Updating dependencies..."
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
             
-            # Restart service
+            echo "Starting service..."
             sudo systemctl daemon-reload
             sudo systemctl enable fastapi-app.service
             sudo systemctl start fastapi-app.service
             
-            # Verify deployment
-            sleep 5
-            sudo systemctl is-active --quiet fastapi-app.service || {
+            # More thorough verification
+            echo "Verifying deployment..."
+            sleep 10  # Give more time for the service to start
+            if ! sudo systemctl is-active --quiet fastapi-app.service; then
               echo "Service failed to start. Logs:"
               sudo journalctl -u fastapi-app.service --no-pager --lines=50
+              sudo systemctl status fastapi-app.service
               exit 1
-            }
+            fi
+            
+            echo "Verifying port binding..."
+            if ! sudo lsof -i:8000 | grep "uvicorn"; then
+              echo "Service not bound to port 8000. Logs:"
+              sudo journalctl -u fastapi-app.service --no-pager --lines=50
+              exit 1
+            fi
