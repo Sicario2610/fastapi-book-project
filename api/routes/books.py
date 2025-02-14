@@ -52,7 +52,7 @@ async def get_books() -> OrderedDict[int, Book]:
 # NEW ROUTE FOR GETTING BOOKS BY ID
 
 @router.get("/{book_id}", response_model=Book, status_code=status.HTTP_200_OK)
-async def get_book(book_id: int) -> Book:
+async def get_book.content (book_id: int) -> Book:
     book = db.get_book(book_id)  # Retrieve single Book by Id
     if not book:
         raise HTTPException(
